@@ -1,0 +1,5 @@
+target/
+pkg/*.wasm
+
+nn/src/whisper-tiny.en
+nn/src/mel_filters.safetensors

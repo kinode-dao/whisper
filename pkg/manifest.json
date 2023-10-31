@@ -1,0 +1,10 @@
+[
+    {
+        "process_name": "nn",
+        "process_wasm_path": "/nn.wasm",
+        "on_panic": "Restart",
+        "request_networking": true,
+        "request_messaging": [],
+        "public": true
+    }
+]
