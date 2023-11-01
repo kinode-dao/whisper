@@ -6,6 +6,8 @@ use candle_transformers::models::whisper::{self as m, Config};
 use crate::languages::LANGUAGES;
 use rand::{distributions::Distribution, rngs::StdRng, SeedableRng};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::collections::HashMap;
 use tokenizers::Tokenizer;
 
 mod process_lib;
@@ -14,7 +16,7 @@ mod audio;
 
 use bindings::component::uq_process::types::*;
 use bindings::{
-    get_payload, print_to_terminal, receive, Guest,
+    get_payload, send_requests, send_response, print_to_terminal, receive, Guest,
 };
 
 struct Component;
@@ -437,11 +439,36 @@ pub enum WorkerOutput {
     WeightsLoaded,
 }
 
+#[derive(Deserialize, Debug)]
+struct AudioForm {
+    audio: String,
+}
+
+fn send_http_response(status: u16, headers: HashMap<String, String>, payload_bytes: Vec<u8>) {
+    send_response(
+        &Response {
+            inherit: false,
+            ipc: serde_json::json!({
+                "status": status,
+                "headers": headers,
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
+            metadata: None,
+        },
+        Some(&Payload {
+            mime: Some("application/octet-stream".to_string()),
+            bytes: payload_bytes,
+        }),
+    )
+}
+
 impl Guest for Component {
-    fn init(_our: Address) {
+    fn init(our: Address) {
         print_to_terminal(0, "nn: start");
 
-        // load model data
+        // 1. load model data
         let md = ModelData {
             weights: WEIGHTS.to_vec(),
             tokenizer: TOKENIZER.to_vec(),
@@ -456,33 +483,136 @@ impl Guest for Component {
         
         let mut decoder = Decoder::load(md).unwrap();
 
+        // 2. http bindings
+        let bindings_address = Address {
+            node: our.node.clone(),
+            process: ProcessId::from_str("http_server:sys:uqbar").unwrap(),
+        };
+        let http_endpoint_binding_requests: [(Address, Request, Option<Context>, Option<Payload>);
+        2] = [
+            (
+                bindings_address.clone(),
+                Request {
+                    inherit: false,
+                    expects_response: None,
+                    ipc: json!({
+                        "BindPath": {
+                            "path": "/",
+                            "authenticated": false, // TODO
+                            "local_only": false
+                        }
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
+                    metadata: None,
+                },
+                None,
+                None,
+            ),
+            (
+                bindings_address.clone(),
+                Request {
+                    inherit: false,
+                    expects_response: None,
+                    ipc: json!({
+                        "BindPath": {
+                            "path": "/audio",
+                            "authenticated": false, // TODO
+                            "local_only": false
+                        }
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
+                    metadata: None,
+                },
+                None,
+                None,
+            ),
+        ];
+        send_requests(&http_endpoint_binding_requests);
+
+
         loop {
             let Ok((source, message)) = receive() else {
                 print_to_terminal(0, "nn: got network error");
                 continue;
             };
+            print_to_terminal(0, "nn: got message");
             let Message::Request(request) = message else {
                 print_to_terminal(0, "nn: got unexpected Response");
                 continue;
             };
+            print_to_terminal(0, "nn: got request");
 
-            // let Ok(json) = serde_json::from_slice::<serde_json::Value>(&request.ipc) else {
-            //     print_to_terminal(0, "nn: got invalid json");
-            //     continue;
-            // };
+            if source.process.to_string() == "http_server:sys:uqbar" {
+                print_to_terminal(0, "nn: got http request");
+                let Ok(json) = serde_json::from_slice::<serde_json::Value>(&request.ipc) else {
+                    print_to_terminal(0, "nn: got invalid json");
+                    continue;
+                };
+                print_to_terminal(0, "nn: got http request");
 
-            let Some(wav_payload) = get_payload() else {
-                print_to_terminal(0, "nn: got invalid payload");
-                continue;
-            };
+                let mut default_headers = HashMap::new();
+                default_headers.insert("Content-Type".to_string(), "text/html".to_string());
 
+                let path = json["path"].as_str().unwrap_or("");
+                let method = json["method"].as_str().unwrap_or("");
 
-            let output = decoder
-                .convert_and_run(&wav_payload.bytes)
-                .map(WorkerOutput::Decoded)
-                .map_err(|e| e.to_string());
-            
-            print_to_terminal(0, &format!("nn: output: {:?}", output));
+                match path {
+                    "/" => {
+                        print_to_terminal(0, "nn: sending homepage");
+                        send_http_response(
+                            200,
+                            default_headers.clone(),
+                            "audio homepage".as_bytes().to_vec(),
+                            // CHESS_PAGE
+                            //     .replace("${node}", &our.node)
+                            //     .replace("${process}", &our.process.to_string())
+                            //     .replace("${js}", CHESS_JS)
+                            //     .replace("${css}", CHESS_CSS)
+                            //     .to_string()
+                            //     .as_bytes()
+                            //     .to_vec(),
+                        );
+                    }
+                    "/audio" => {
+                        print_to_terminal(0, "nn: got audio post");
+                        let Some(form) = get_payload() else {
+                            print_to_terminal(0, "nn: got invalid payload");
+                            continue;
+                        };
+                        match serde_urlencoded::from_bytes::<AudioForm>(&form.bytes) {
+                            Ok(mut parsed_form) => {
+                                // let len = parsed_form.audio.clone().len();
+                                parsed_form.audio.truncate(parsed_form.audio.len() - 1);
+                                let Ok(audio_bytes) = base64::decode(parsed_form.audio.clone()) else {
+                                    // print_to_terminal(0, "nn: got invalid base64");
+                                    print_to_terminal(0, &format!("nn: got invalid base64: {:?}", parsed_form.audio));
+                                    continue;
+                                };
+
+                                print_to_terminal(0, "nn: about to translate");
+                                let output = decoder
+                                    .convert_and_run(&audio_bytes)
+                                    .map(WorkerOutput::Decoded)
+                                    .map_err(|e| e.to_string());
+                                
+                                print_to_terminal(0, &format!("nn: output: {:?}", output));
+        
+                                send_http_response(
+                                    200,
+                                    default_headers.clone(),
+                                    serde_json::to_vec(&output).unwrap(),
+                                );
+                            }
+                            Err(e) => print_to_terminal(0, &format!("nn: got invalid form: {:?}", e))
+                        }
+                    }
+                    _ => { todo!() }
+                }
+            }
         }
     }
 }
