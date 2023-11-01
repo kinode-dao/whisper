@@ -433,12 +433,6 @@ pub enum WorkerInput {
     DecodeTask { wav_bytes: Vec<u8> },
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-pub enum WorkerOutput {
-    Decoded(Vec<Segment>),
-    WeightsLoaded,
-}
-
 #[derive(Deserialize, Debug)]
 struct AudioForm {
     audio: String,
@@ -594,17 +588,21 @@ impl Guest for Component {
                                 };
 
                                 print_to_terminal(0, "nn: about to translate");
-                                let output = decoder
+                                let output = match decoder
                                     .convert_and_run(&audio_bytes)
-                                    .map(WorkerOutput::Decoded)
-                                    .map_err(|e| e.to_string());
+                                    {
+                                        Ok(output) => output,
+                                        Err(e) => vec![]
+                                    };
                                 
-                                print_to_terminal(0, &format!("nn: output: {:?}", output));
+                                let output_texts = output.into_iter().map(|seg| seg.dr.text).collect::<Vec<String>>();
+                                
+                                print_to_terminal(0, &format!("nn: output: {:?}", output_texts));
         
                                 send_http_response(
                                     200,
                                     default_headers.clone(),
-                                    serde_json::to_vec(&output).unwrap(),
+                                    serde_json::to_vec(&output_texts).unwrap(),
                                 );
                             }
                             Err(e) => print_to_terminal(0, &format!("nn: got invalid form: {:?}", e))
