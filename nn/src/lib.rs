@@ -386,10 +386,16 @@ impl Decoder {
     pub fn convert_and_run(&mut self, wav_input: &[u8]) -> anyhow::Result<Vec<Segment>> {
         let device = Device::Cpu;
         let mut wav_input = std::io::Cursor::new(wav_input);
-        let (header, data) = wav::read(&mut wav_input)?;
-        print_to_terminal(0, "loaded wav data: {header:?}");
+        let (header, data) = match wav::read(&mut wav_input) {
+            Ok(wav) => wav,
+            Err(e) => {
+                print_to_terminal(0, &format!("error reading wav: {:?}", e));
+                panic!();
+            }
+        };
         if header.sampling_rate != m::SAMPLE_RATE as u32 {
-            anyhow::bail!("wav file must have a {} sampling rate", m::SAMPLE_RATE);
+            print_to_terminal(0, &format("wav file must have a {} sampling rate", m::SAMPLE_RATE));
+            panic!();
         }
         let data = data.as_sixteen().expect("expected 16 bit wav file");
         let pcm_data: Vec<_> = data[..data.len() / header.channel_count as usize]
@@ -578,16 +584,13 @@ impl Guest for Component {
                             continue;
                         };
                         match serde_urlencoded::from_bytes::<AudioForm>(&form.bytes) {
-                            Ok(mut parsed_form) => {
-                                // let len = parsed_form.audio.clone().len();
-                                parsed_form.audio.truncate(parsed_form.audio.len() - 1);
+                            Ok(parsed_form) => {
                                 let Ok(audio_bytes) = base64::decode(parsed_form.audio.clone()) else {
                                     // print_to_terminal(0, "nn: got invalid base64");
                                     print_to_terminal(0, &format!("nn: got invalid base64: {:?}", parsed_form.audio));
                                     continue;
                                 };
 
-                                print_to_terminal(0, "nn: about to translate");
                                 let output = match decoder
                                     .convert_and_run(&audio_bytes)
                                     {
