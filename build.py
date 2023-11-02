@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
     # If a specific process is provided, compile it
     if len(sys.argv) > 1:
-        process_dir = os.abspath(os.path.join(root_dir, sys.argv[1]))
+        process_dir = os.path.abspath(os.path.join(root_dir, sys.argv[1]))
         compile_process(process_dir, pkg_dir, root_dir)
     else:
         # Compile each base dir folder that has a Cargo.toml

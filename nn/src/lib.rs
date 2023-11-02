@@ -394,7 +394,7 @@ impl Decoder {
             }
         };
         if header.sampling_rate != m::SAMPLE_RATE as u32 {
-            print_to_terminal(0, &format("wav file must have a {} sampling rate", m::SAMPLE_RATE));
+            print_to_terminal(0, &format!("wav file must have a {} sampling rate", m::SAMPLE_RATE));
             panic!();
         }
         let data = data.as_sixteen().expect("expected 16 bit wav file");
@@ -483,57 +483,6 @@ impl Guest for Component {
         
         let mut decoder = Decoder::load(md).unwrap();
 
-        // 2. http bindings
-        let bindings_address = Address {
-            node: our.node.clone(),
-            process: ProcessId::from_str("http_server:sys:uqbar").unwrap(),
-        };
-        let http_endpoint_binding_requests: [(Address, Request, Option<Context>, Option<Payload>);
-        2] = [
-            (
-                bindings_address.clone(),
-                Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: json!({
-                        "BindPath": {
-                            "path": "/",
-                            "authenticated": false, // TODO
-                            "local_only": false
-                        }
-                    })
-                    .to_string()
-                    .as_bytes()
-                    .to_vec(),
-                    metadata: None,
-                },
-                None,
-                None,
-            ),
-            (
-                bindings_address.clone(),
-                Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: json!({
-                        "BindPath": {
-                            "path": "/audio",
-                            "authenticated": false, // TODO
-                            "local_only": false
-                        }
-                    })
-                    .to_string()
-                    .as_bytes()
-                    .to_vec(),
-                    metadata: None,
-                },
-                None,
-                None,
-            ),
-        ];
-        send_requests(&http_endpoint_binding_requests);
-
-
         loop {
             let Ok((source, message)) = receive() else {
                 print_to_terminal(0, "nn: got network error");
@@ -546,74 +495,29 @@ impl Guest for Component {
             };
             print_to_terminal(0, "nn: got request");
 
-            if source.process.to_string() == "http_server:sys:uqbar" {
-                print_to_terminal(0, "nn: got http request");
-                let Ok(json) = serde_json::from_slice::<serde_json::Value>(&request.ipc) else {
-                    print_to_terminal(0, "nn: got invalid json");
-                    continue;
+            let audio_bytes = get_payload();
+
+            let output = match decoder
+                .convert_and_run(&audio_bytes.unwrap().bytes)
+                {
+                    Ok(output) => output,
+                    Err(e) => vec![]
                 };
-                print_to_terminal(0, "nn: got http request");
-
-                let mut default_headers = HashMap::new();
-                default_headers.insert("Content-Type".to_string(), "text/html".to_string());
-
-                let path = json["path"].as_str().unwrap_or("");
-                let method = json["method"].as_str().unwrap_or("");
-
-                match path {
-                    "/" => {
-                        print_to_terminal(0, "nn: sending homepage");
-                        send_http_response(
-                            200,
-                            default_headers.clone(),
-                            "audio homepage".as_bytes().to_vec(),
-                            // CHESS_PAGE
-                            //     .replace("${node}", &our.node)
-                            //     .replace("${process}", &our.process.to_string())
-                            //     .replace("${js}", CHESS_JS)
-                            //     .replace("${css}", CHESS_CSS)
-                            //     .to_string()
-                            //     .as_bytes()
-                            //     .to_vec(),
-                        );
-                    }
-                    "/audio" => {
-                        print_to_terminal(0, "nn: got audio post");
-                        let Some(form) = get_payload() else {
-                            print_to_terminal(0, "nn: got invalid payload");
-                            continue;
-                        };
-                        match serde_urlencoded::from_bytes::<AudioForm>(&form.bytes) {
-                            Ok(parsed_form) => {
-                                let Ok(audio_bytes) = base64::decode(parsed_form.audio.clone()) else {
-                                    // print_to_terminal(0, "nn: got invalid base64");
-                                    print_to_terminal(0, &format!("nn: got invalid base64: {:?}", parsed_form.audio));
-                                    continue;
-                                };
-
-                                let output = match decoder
-                                    .convert_and_run(&audio_bytes)
-                                    {
-                                        Ok(output) => output,
-                                        Err(e) => vec![]
-                                    };
-                                
-                                let output_texts = output.into_iter().map(|seg| seg.dr.text).collect::<Vec<String>>();
-                                
-                                print_to_terminal(0, &format!("nn: output: {:?}", output_texts));
-        
-                                send_http_response(
-                                    200,
-                                    default_headers.clone(),
-                                    serde_json::to_vec(&output_texts).unwrap(),
-                                );
-                            }
-                            Err(e) => print_to_terminal(0, &format!("nn: got invalid form: {:?}", e))
-                        }
-                    }
-                    _ => { todo!() }
-                }
-            }
+            
+            let output_texts = output.into_iter().map(|seg| seg.dr.text).collect::<Vec<String>>();
+            
+            print_to_terminal(0, &format!("nn: output: {:?}", output_texts));
+            send_response(
+                &Response {
+                    inherit: false,
+                    ipc: serde_json::json!(output_texts)
+                        .to_string()
+                        .as_bytes()
+                        .to_vec(),
+                    metadata: None,
+                },
+                None
+            );
         }
     }
 }

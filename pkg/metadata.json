@@ -1,6 +1,6 @@
 {
-    "package": "nn",
+    "package": "whisper",
     "publisher": "drew.uq",
     "version": [0, 1, 0],
-    "description": "neural networks"
+    "description": "whisper speech to text app"
 }
