@@ -13,6 +13,12 @@ mod process_lib;
 
 struct Component;
 
+const WHISPER_PAGE: &str = include_str!("index.html");
+const WHISPER_JS: &str = include_str!("index.js");
+const WHISPER_JS2: &str = include_str!("index2.js");
+const WHISPER_VIZ: &str = include_str!("viz.js");
+const WHISPER_CSS: &str = include_str!("index.css");
+
 #[derive(Deserialize, Debug)]
 struct AudioForm {
     audio: String,
@@ -48,7 +54,7 @@ impl Guest for Component {
             process: ProcessId::from_str("http_server:sys:uqbar").unwrap(),
         };
         let http_endpoint_binding_requests: [(Address, Request, Option<Context>, Option<Payload>);
-        2] = [
+        6] = [
             (
                 bindings_address.clone(),
                 Request {
@@ -77,6 +83,86 @@ impl Guest for Component {
                     ipc: json!({
                         "BindPath": {
                             "path": "/audio",
+                            "authenticated": false, // TODO
+                            "local_only": false
+                        }
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
+                    metadata: None,
+                },
+                None,
+                None,
+            ),
+            (
+                bindings_address.clone(),
+                Request {
+                    inherit: false,
+                    expects_response: None,
+                    ipc: json!({
+                        "BindPath": {
+                            "path": "/viz.js",
+                            "authenticated": false, // TODO
+                            "local_only": false
+                        }
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
+                    metadata: None,
+                },
+                None,
+                None,
+            ),
+            (
+                bindings_address.clone(),
+                Request {
+                    inherit: false,
+                    expects_response: None,
+                    ipc: json!({
+                        "BindPath": {
+                            "path": "/index.js",
+                            "authenticated": false, // TODO
+                            "local_only": false
+                        }
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
+                    metadata: None,
+                },
+                None,
+                None,
+            ),
+            (
+                bindings_address.clone(),
+                Request {
+                    inherit: false,
+                    expects_response: None,
+                    ipc: json!({
+                        "BindPath": {
+                            "path": "/index.css",
+                            "authenticated": false, // TODO
+                            "local_only": false
+                        }
+                    })
+                    .to_string()
+                    .as_bytes()
+                    .to_vec(),
+                    metadata: None,
+                },
+                None,
+                None,
+            ),
+            (
+                bindings_address.clone(),
+                Request {
+                    inherit: false,
+                    expects_response: None,
+                    ipc: json!({
+                        "BindPath": {
+                            "path": "/index2.js",
                             "authenticated": false, // TODO
                             "local_only": false
                         }
@@ -124,16 +210,81 @@ impl Guest for Component {
                         print_to_terminal(0, "whisper app: sending homepage");
                         send_http_response(
                             200,
-                            default_headers.clone(),
-                            "audio homepage".as_bytes().to_vec(),
-                            // CHESS_PAGE
-                            //     .replace("${node}", &our.node)
-                            //     .replace("${process}", &our.process.to_string())
-                            //     .replace("${js}", CHESS_JS)
-                            //     .replace("${css}", CHESS_CSS)
-                            //     .to_string()
-                            //     .as_bytes()
-                            //     .to_vec(),
+                            {
+                                let mut heds = default_headers.clone();
+                                heds.insert("Cross-Origin-Embedder-Policy".to_string(), "require-corp".to_string());
+                                heds.insert("Cross-Origin-Opener-Policy".to_string(), "same-origin".to_string());
+                                heds
+                            },
+                            // "audio homepage".as_bytes().to_vec(),
+                            WHISPER_PAGE
+                                .to_string()
+                                .as_bytes()
+                                .to_vec(),
+                        );
+                    }
+                    "/index.js" => {
+                        print_to_terminal(0, "whisper app: sending homepage");
+                        send_http_response(
+                            200,
+                            {
+                                let mut heds = default_headers.clone();
+                                heds.insert("Content-Type".to_string(), "application/javascript".to_string());
+                                heds
+                            },
+                            // "audio homepage".as_bytes().to_vec(),
+                            WHISPER_JS
+                                .to_string()
+                                .as_bytes()
+                                .to_vec(),
+                        );
+                    }
+                    "/index2.js" => {
+                        print_to_terminal(0, "whisper app: sending homepage");
+                        send_http_response(
+                            200,
+                            {
+                                let mut heds = default_headers.clone();
+                                heds.insert("Content-Type".to_string(), "application/javascript".to_string());
+                                heds
+                            },
+                            // "audio homepage".as_bytes().to_vec(),
+                            WHISPER_JS2
+                                .to_string()
+                                .as_bytes()
+                                .to_vec(),
+                        );
+                    }
+                    "/index.css" => {
+                        print_to_terminal(0, "whisper app: sending homepage");
+                        send_http_response(
+                            200,
+                            {
+                                let mut heds = default_headers.clone();
+                                heds.insert("Content-Type".to_string(), "text/css".to_string());
+                                heds
+                            },
+                            // "audio homepage".as_bytes().to_vec(),
+                            WHISPER_CSS
+                                .to_string()
+                                .as_bytes()
+                                .to_vec(),
+                        );
+                    }
+                    "/viz.js" => {
+                        print_to_terminal(0, "whisper app: sending homepage");
+                        send_http_response(
+                            200,
+                            {
+                                let mut heds = default_headers.clone();
+                                heds.insert("Content-Type".to_string(), "application/javascript".to_string());
+                                heds
+                            },
+                            // "audio homepage".as_bytes().to_vec(),
+                            WHISPER_VIZ
+                                .to_string()
+                                .as_bytes()
+                                .to_vec(),
                         );
                     }
                     "/audio" => {
