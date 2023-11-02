@@ -433,37 +433,6 @@ pub struct ModelData {
     pub task: Option<String>,
 }
 
-#[derive(Serialize, Deserialize)]
-pub enum WorkerInput {
-    ModelData(ModelData),
-    DecodeTask { wav_bytes: Vec<u8> },
-}
-
-#[derive(Deserialize, Debug)]
-struct AudioForm {
-    audio: String,
-}
-
-fn send_http_response(status: u16, headers: HashMap<String, String>, payload_bytes: Vec<u8>) {
-    send_response(
-        &Response {
-            inherit: false,
-            ipc: serde_json::json!({
-                "status": status,
-                "headers": headers,
-            })
-            .to_string()
-            .as_bytes()
-            .to_vec(),
-            metadata: None,
-        },
-        Some(&Payload {
-            mime: Some("application/octet-stream".to_string()),
-            bytes: payload_bytes,
-        }),
-    )
-}
-
 impl Guest for Component {
     fn init(our: Address) {
         print_to_terminal(0, "nn: start");
