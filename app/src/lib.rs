@@ -44,6 +44,29 @@ fn send_http_response(status: u16, headers: HashMap<String, String>, payload_byt
     )
 }
 
+fn http_bind(bindings_address: Address, path: &str) -> (Address, Request, Option<Context>, Option<Payload>) {
+    (
+        bindings_address,
+        Request {
+            inherit: false,
+            expects_response: None,
+            ipc: json!({
+                "BindPath": {
+                    "path": path,
+                    "authenticated": false, // TODO
+                    "local_only": false
+                }
+            })
+            .to_string()
+            .as_bytes()
+            .to_vec(),
+            metadata: None,
+        },
+        None,
+        None,
+    )
+}
+
 impl Guest for Component {
     fn init(our: Address) {
         print_to_terminal(0, "whisper app: start");
@@ -53,131 +76,15 @@ impl Guest for Component {
             node: our.node.clone(),
             process: ProcessId::from_str("http_server:sys:uqbar").unwrap(),
         };
-        let http_endpoint_binding_requests: [(Address, Request, Option<Context>, Option<Payload>);
-        6] = [
-            (
-                bindings_address.clone(),
-                Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: json!({
-                        "BindPath": {
-                            "path": "/",
-                            "authenticated": false, // TODO
-                            "local_only": false
-                        }
-                    })
-                    .to_string()
-                    .as_bytes()
-                    .to_vec(),
-                    metadata: None,
-                },
-                None,
-                None,
-            ),
-            (
-                bindings_address.clone(),
-                Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: json!({
-                        "BindPath": {
-                            "path": "/audio",
-                            "authenticated": false, // TODO
-                            "local_only": false
-                        }
-                    })
-                    .to_string()
-                    .as_bytes()
-                    .to_vec(),
-                    metadata: None,
-                },
-                None,
-                None,
-            ),
-            (
-                bindings_address.clone(),
-                Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: json!({
-                        "BindPath": {
-                            "path": "/viz.js",
-                            "authenticated": false, // TODO
-                            "local_only": false
-                        }
-                    })
-                    .to_string()
-                    .as_bytes()
-                    .to_vec(),
-                    metadata: None,
-                },
-                None,
-                None,
-            ),
-            (
-                bindings_address.clone(),
-                Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: json!({
-                        "BindPath": {
-                            "path": "/index.js",
-                            "authenticated": false, // TODO
-                            "local_only": false
-                        }
-                    })
-                    .to_string()
-                    .as_bytes()
-                    .to_vec(),
-                    metadata: None,
-                },
-                None,
-                None,
-            ),
-            (
-                bindings_address.clone(),
-                Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: json!({
-                        "BindPath": {
-                            "path": "/index.css",
-                            "authenticated": false, // TODO
-                            "local_only": false
-                        }
-                    })
-                    .to_string()
-                    .as_bytes()
-                    .to_vec(),
-                    metadata: None,
-                },
-                None,
-                None,
-            ),
-            (
-                bindings_address.clone(),
-                Request {
-                    inherit: false,
-                    expects_response: None,
-                    ipc: json!({
-                        "BindPath": {
-                            "path": "/index2.js",
-                            "authenticated": false, // TODO
-                            "local_only": false
-                        }
-                    })
-                    .to_string()
-                    .as_bytes()
-                    .to_vec(),
-                    metadata: None,
-                },
-                None,
-                None,
-            ),
-        ];
-        send_requests(&http_endpoint_binding_requests);
 
+        send_requests(&[
+            http_bind(bindings_address.clone(), "/"),
+            http_bind(bindings_address.clone(), "/audio"),
+            http_bind(bindings_address.clone(), "/viz.js"),
+            http_bind(bindings_address.clone(), "/index.js"),
+            http_bind(bindings_address.clone(), "/index2.js"),
+            http_bind(bindings_address.clone(), "/index.css"),
+        ]);
 
         loop {
             let Ok((source, message)) = receive() else {
@@ -212,6 +119,8 @@ impl Guest for Component {
                             200,
                             {
                                 let mut heds = default_headers.clone();
+                                // NOTE: you need these headers to enable cross-origin isolation which lets us
+                                // use some frontend features, mainly SharedArrayBuffer for audio processing
                                 heds.insert("Cross-Origin-Embedder-Policy".to_string(), "require-corp".to_string());
                                 heds.insert("Cross-Origin-Opener-Policy".to_string(), "same-origin".to_string());
                                 heds
@@ -322,7 +231,6 @@ impl Guest for Component {
                                     Ok((src, msg)) => {
                                         let Message::Response(res) = msg else { panic!(); };
                                         res.0.ipc
-                                        // String::from_utf8(res.0.ipc).unwrap()
                                     },
                                     Err(_e) => { "error".to_string().as_bytes().to_vec() }
                                 };
@@ -332,7 +240,7 @@ impl Guest for Component {
                                 send_http_response(
                                     200,
                                     default_headers.clone(),
-                                    text, // serde_json::to_vec(&res).unwrap(),
+                                    text,
                                 );
                             }
                             Err(e) => print_to_terminal(0, &format!("whisper app: got invalid form: {:?}", e))
